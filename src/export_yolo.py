@@ -8,14 +8,14 @@ from ultralytics import YOLO
 
 # Load the exported NCNN directory
 net = ncnn.Net()
-net.load_param("yolov8n_ncnn_model/yolov8n.param")
-net.load_model("yolov8n_ncnn_model/yolov8n.bin")
+net.load_param("yolov11n_ncnn_model/yolov11n.param")
+net.load_model("yolov11n_ncnn_model/yolov11n.bin")
 
 # Load exported model via Ultralytics API for direct testing
-model = YOLO("./yolov8n_ncnn_model")
+model = YOLO("./yolov11n_ncnn_model")
 results = model("path/to/your/image.jpg")
 """
 from ultralytics import YOLO
 
-model = YOLO("yolov8n.pt")
+model = YOLO("yolo11n.pt")
 model.export(format="ncnn", imgsz=640)

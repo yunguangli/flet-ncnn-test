@@ -45,7 +45,7 @@ def main(page: ft.Page):
         try:
             # Drop default confidence limit to 0.10 to safely capture low-contrast laptops on black frames
             processed_mat, analysis_summary = detector.detect_and_render(
-                img_path, conf_thresh=0.10, nms_thresh=0.45
+                img_path, conf_thresh=0.3, nms_thresh=0.45
             )
             
             # Compress image payload straight to memory matrix strings to avoid caching slowdowns
