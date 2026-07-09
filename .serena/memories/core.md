@@ -1,34 +1,34 @@
-# Core — flet-ncnn-test
+# Core — flet-ncnn-test (product: laptop-detect)
 
 ## Purpose
-Real-time object detection GUI app using Flet + NCNN. Camera-based live inference with YOLO models, targeting desktop web first, mobile Android later.
+Real-time object detection GUI: Flet + NCNN YOLO inference from camera. Desktop web primary; Android target later.
 
 ## Source map
-- `src/main.py` — Entry point; wires Model → Controller → View (CVM pattern)
-- `src/app/models/` — Pure data & inference (no Flet imports)
-  - `types.py` — Dataclasses: BoundingBox, DetectionResult, DetectorConfig, CameraConfig
-  - `detector.py` — YOLOv8NCNNDetector class wrapping ncnn.Net
-- `src/app/controllers/` — Business logic & state
-  - `detection_controller.py` — Camera lifecycle, detection loop, event routing
-- `src/app/views/` — Flet UI
-  - `detection_view.py` — Stack layout (camera + annotated overlay), button bindings
-- `src/assets/model.ncnn.param|bin` — YOLO NCNN model files (exported via Ultralytics)
-- `src/ncnn_detector.py` — Original single-file detector (kept for reference)
-- `src/flet_detect_holding.py` — Original static-image demo (kept for reference)
+- `src/main.py` — Entry: resolve assets → detector → Controller/View; platform chooses camera backend
+- `src/app/models/` — Pure data & inference (no Flet)
+  - `types.py` — BoundingBox, DetectionResult, DetectorConfig, CameraConfig
+  - `detector.py` — `YOLOv8NCNNDetector` (ncnn.Net wrapper; class name legacy, model is YOLOv11n-exported)
+- `src/app/controllers/detection_controller.py` — Camera lifecycle, detection loops, events
+- `src/app/views/detection_view.py` — Stack UI (camera + annotated overlay), buttons
+- `src/assets/model.ncnn.param|bin` — Bundled NCNN model used at runtime (`build_detector_config`)
+- `src/yolo11n_ncnn_model/`, `src/yolov8n_ncnn_model/` — Extra exported models (not wired by default)
+- `src/ncnn_detector.py`, `src/flet_detect_holding.py` — Reference/legacy single-file scripts
+- `src/tests/` — Ad-hoc YOLO/NCNN experiments; `tests/test_main.py` — template Flet test (counter stub, not app-aligned)
+- Spec notes: `todo.txt`; Flet skill docs under `.github/skills/`
 
 ## Architecture invariants
-- CVM (Control-View-Model): models/ has no Flet imports, views/ has no business logic, controllers/ owns runtime state.
-- Camera backend chosen by platform in `main.py`: flet-camera (web/mobile) or OpenCV (desktop). Controller takes `use_flet_camera` flag.
-- flet_camera.Camera control created in View, shared with Controller via `controller.attach_camera(camera)`.
-- flet-camera works on web: `start_image_stream()` + `on_stream_image` (CameraImageEvent.bytes = JPEG when initialized with ImageFormatGroup.JPEG). Check `supports_image_streaming()` before streaming.
-- Two-button UX: "Start/Stop Camera" (init camera — required for web user-gesture) + "Start/Stop Detection" (toggle NCNN inference). No auto-start.
-- Stack layout in View: Camera control (native preview, bottom) + Image overlay (annotated frames during detection, transparent during preview).
-- OpenCV fallback (desktop only): cv2.VideoCapture + asyncio preview/detection loops. Server-side camera — wrong device on web, hence flet-camera is primary there.
-- `pyproject.toml` is the single source of truth for deps, no requirements.txt.
-- `flet run --web` is the primary dev command; `flet run` (desktop) uses OpenCV (flet-camera unsupported on desktop).
+- CVM: models/ no Flet; views/ no business logic; controllers/ own runtime state
+- Camera: flet-camera on web/Android/iOS (`page.web` or platform); OpenCV on desktop (`use_flet_camera` flag)
+- Camera control created in View, attached via `controller.attach_camera(camera)`
+- flet-camera web: `start_image_stream()` + `on_stream_image` (JPEG when ImageFormatGroup.JPEG); gate with `supports_image_streaming()`
+- UX: separate "Start/Stop Camera" and "Start/Stop Detection" — no auto-start (browser user-gesture)
+- View Stack: native Camera preview under Image overlay (annotated frames when detecting; transparent placeholder in preview)
+- OpenCV path: `cv2.VideoCapture` + asyncio preview/detection loops (desktop only)
+- `pyproject.toml` sole dep source; app path `src` via `[tool.flet.app]`
 
 ## Key constraints
-- Browser media API requires user gesture → camera starts only on "Start Camera" button click (not auto-started).
-- Camera control must be visible (not `visible=False`) in page tree for invoke-method handlers to register.
-- Image `src` supports raw `bytes` directly (not `src_base64`, which was removed in Flet 1.0+).
-- NCNN model input is 640×640, output is `out0` tensor with COCO 80-class format.
+- Browser media needs user gesture → camera only on button click
+- Camera control must stay in page tree (visible) for invoke-method handlers
+- Image `src` accepts raw `bytes` (no `src_base64` in Flet 1.0+)
+- NCNN: 640 input, `out0` tensor, COCO 80-class; `use_vulkan=False` by default (True for Android GPU builds)
+- Related: `mem:tech_stack`, `mem:conventions`, `mem:suggested_commands`, `mem:task_completion`

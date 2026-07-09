@@ -6,7 +6,7 @@ These types are shared between the Model, Controller, and View layers.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List
 
 
 @dataclass
@@ -61,11 +61,3 @@ class DetectorConfig:
     conf_threshold: float = 0.30
     nms_threshold: float = 0.45
     input_size: int = 640
-
-
-@dataclass
-class CameraConfig:
-    """Configuration for the camera capture."""
-    resolution_preset: str = "MEDIUM"  # LOW, MEDIUM, HIGH, VERY_HIGH, ULTRA_HIGH, MAX
-    fps: int | None = 15  # Target FPS for camera stream
-    use_front_camera: bool = False

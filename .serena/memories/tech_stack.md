@@ -1,14 +1,12 @@
 # Tech Stack
 
-- **Language**: Python 3.10+ (project 3.14 currently)
-- **UI framework**: Flet >=0.85.3 (0.85.3 installed)
-- **Camera**: flet-camera 0.85.3 (supports web, Android, iOS only)
-- **Inference**: Tencent NCNN (python package `ncnn`) with YOLOv11n model
-- **Image processing**: opencv-python, numpy
-- **Package manager**: uv (with `pyproject.toml`; no requirements.txt)
-  - `uv run flet run --web` — dev web server
-  - `uv run flet run` — desktop (if unix SPA with local server)
-- **Test**: pytest (asyncio_mode = auto), `flet test`
-- **Build**: flet CLI (`flet build apk`, `flet build web`, etc.)
-- **Version pins**: flet, flet-camera, numpy pinned via uv.lock (lockfile committed)
-- **Dev deps** (in `dependency-groups.dev`): flet-cli, flet-desktop, flet-web, flet[test]
+- **Language**: Python >=3.10 (dev machine has 3.14)
+- **UI**: Flet >=0.85.3
+- **Camera**: flet-camera (web / Android / iOS only; desktop uses OpenCV)
+- **Inference**: Tencent NCNN Python package; YOLO NCNN export via Ultralytics (yolo11n → `src/assets/model.ncnn.*`)
+- **CV/array**: opencv-python, numpy
+- **Package manager**: uv + `pyproject.toml` + committed `uv.lock` (no requirements.txt)
+- **Tests**: pytest (`asyncio_mode = auto`, `testpaths = ["tests"]`); also `flet test` / `flet[test]` extra
+- **Build**: flet CLI (`flet build apk|web|linux|...`)
+- **Dev group**: flet-cli, flet-desktop, flet-web, flet[test]
+- Product metadata: `[tool.flet]` org=com.mycompany, product=laptop-detect

@@ -38,12 +38,6 @@ _TRANSPARENT_1PX = base64.b64decode(
     "AAAAC0lEQVR42mP8/wIAAgMBAp0YVwAAAABJRU5ErkJggg=="
 )
 
-_PLACEHOLDER_ICON = ft.Icon(
-    ft.Icons.VIDEOCAM_OFF,
-    color=ft.Colors.WHITE_70,
-    size=48,
-)
-
 
 class DetectionView:
     def __init__(self, controller: DetectionController):
@@ -215,6 +209,7 @@ class DetectionView:
         if self.camera in self.display_stack.controls:
             self.display_stack.controls.remove(self.camera)
         self.display_stack.update()
+        self.controller.detach_camera()
         self.camera = None
         await asyncio.sleep(0.3)
 

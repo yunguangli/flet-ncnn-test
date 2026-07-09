@@ -83,6 +83,14 @@ class DetectionController:
         camera.on_stream_image = self._on_stream_image
         camera.on_state_change = self._on_camera_state_change
 
+    def detach_camera(self):
+        """Clear the flet-camera reference (called when View removes it from the Stack).
+
+        This prevents the detection loop from calling take_picture() on a
+        control that has been disposed by Flutter.
+        """
+        self.camera = None
+
     # ── Public API: camera lifecycle ──────────────────────────
 
     async def start_camera(self) -> bool:
@@ -309,9 +317,9 @@ class DetectionController:
         return True
 
     async def _start_opencv_detection(self) -> bool:
-        if self._cap is None or not self._cap.isOpened():
-            if not self._open_camera():
-                return False
+        if not self.is_previewing or self._cap is None or not self._cap.isOpened():
+            self._emit_error("Start the camera first.")
+            return False
 
         self.is_detecting = True
         self.frame_count = 0
@@ -365,6 +373,9 @@ class DetectionController:
         """
         while self.is_detecting:
             loop_start = time.time()
+
+            if self.camera is None:
+                break
 
             if self._stream_supported:
                 if not self._stream_frame_pending or self._latest_stream_bytes is None:

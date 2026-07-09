@@ -1,10 +1,10 @@
 # Task Completion Verification
 
-After any code change, run:
+After code changes:
 
-1. `uv run flet run --web` — launch and manually test the app (click Start Detection, verify UI updates and no traceback in server log)
-2. `uv run pytest` — if pytest tests exist in `tests/`
+1. `uv run flet run --web` — manual smoke: Start Camera, Start Detection; no traceback in terminal
+2. `uv run pytest` — if `tests/` still applies to changed surface (current `tests/test_main.py` is a counter stub, not app logic)
 
-No linter or formatter is configured. No type checker beyond what Flet's runtime enforces.
+No project linter/formatter/typechecker configured.
 
-Do **not** commit changes unless explicitly asked.
+Do not commit unless the user asks.

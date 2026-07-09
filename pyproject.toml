@@ -1,5 +1,5 @@
 [project]
-name = "Laptop detect"
+name = "laptop-detect"
 version = "0.1.0"
 description = ""
 readme = "README.md"
@@ -10,7 +10,7 @@ authors = [
 dependencies = [
     "flet>=0.85.3",
     "flet-camera",
-    "ncnn==1.0.20260526",
+    "ncnn",
     "opencv-python",
     "numpy",
 ]
