@@ -1,8 +1,8 @@
 """
 Types module — Pure data structures for detection results and configuration.
 
-This module contains only dataclasses and enums. No Flet or NCNN imports.
-These types are shared between the Model, Controller, and View layers.
+No Flet or NCNN imports. Shared between Model, Controller, and the
+ObjectDetectionCamera control.
 """
 
 from dataclasses import dataclass, field
@@ -18,7 +18,6 @@ class BoundingBox:
     y1: int
     x2: int
     y2: int
-    is_held: bool = False
 
     @property
     def width(self) -> int:
@@ -30,26 +29,24 @@ class BoundingBox:
 
     @property
     def label(self) -> str:
-        status = " [HELD]" if self.is_held else ""
-        return f"{self.class_name} {self.confidence:.2f}{status}"
+        return f"{self.class_name} {self.confidence:.2f}"
 
 
 @dataclass
 class DetectionResult:
     """Complete result of a single frame's detection pass."""
     boxes: List[BoundingBox] = field(default_factory=list)
-    person_count: int = 0
-    held_items: List[str] = field(default_factory=list)
+    class_counts: dict[str, int] = field(default_factory=dict)
     summary: str = ""
     error: str | None = None
 
     @property
-    def has_person(self) -> bool:
-        return self.person_count > 0
-
-    @property
     def object_count(self) -> int:
         return len(self.boxes)
+
+    @property
+    def has_targets(self) -> bool:
+        return len(self.boxes) > 0
 
 
 @dataclass
@@ -61,3 +58,6 @@ class DetectorConfig:
     conf_threshold: float = 0.30
     nms_threshold: float = 0.45
     input_size: int = 640
+    # Empty list = keep all COCO classes after threshold/NMS.
+    # e.g. ["laptop"] or ["laptop", "cell phone"]
+    target_classes: List[str] = field(default_factory=list)
