@@ -119,6 +119,7 @@ class ObjectDetectionCamera(ft.Column):
         # Python-only runtime state (not declared as control fields → not msgpacked)
         object.__setattr__(self, "_detector", detector)
         object.__setattr__(self, "_controller", controller)
+        object.__setattr__(self, "_use_flet_camera", use_flet_camera)
         object.__setattr__(self, "_camera", None)
         object.__setattr__(self, "_preview_active", False)
         object.__setattr__(self, "_frame_counter", 0)
@@ -178,6 +179,13 @@ class ObjectDetectionCamera(ft.Column):
         fps_text = ft.Text(
             "FPS: --", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN_400,
         )
+        backend_label = "flet-camera" if use_flet_camera else "OpenCV"
+        backend_text = ft.Text(
+            f"Backend: {backend_label}",
+            size=12,
+            color=ft.Colors.GREY_500,
+            italic=True,
+        )
         result_text = ft.Text(size=14, selectable=True)
         detection_list = ft.Column(
             spacing=2, visible=False, height=150, scroll=ft.ScrollMode.AUTO,
@@ -188,10 +196,11 @@ class ObjectDetectionCamera(ft.Column):
         object.__setattr__(self, "_fps_text", fps_text)
         object.__setattr__(self, "_result_text", result_text)
         object.__setattr__(self, "_detection_list", detection_list)
+        object.__setattr__(self, "_backend_text", backend_text)
 
         self.controls = [
             ft.Row(
-                controls=[camera_btn, toggle_btn, fps_text],
+                controls=[camera_btn, toggle_btn, fps_text, backend_text],
                 alignment=ft.MainAxisAlignment.CENTER,
                 wrap=True,
             ),

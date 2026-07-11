@@ -8,11 +8,11 @@ authors = [
     { name = "Flet developer", email = "you@example.com" }
 ]
 dependencies = [
-    "flet>=0.85.3",
+    "flet>=0.86.0.dev2",
     "flet-camera",
     "ncnn",
-    "opencv-python",
     "numpy",
+    "opencv-python",
 ]
 
 [dependency-groups]
@@ -37,3 +37,13 @@ copyright = "Copyright (C) 2023-2026 by Flet"
 
 [tool.flet.app]
 path = "src"
+
+[tool.flet.compile]
+packages = false
+
+[tool.flet.android]
+target_arch = ["arm64-v8a", "armeabi-v7a", "x86_64"]
+
+[tool.flet.android.permission]
+"android.permission.CAMERA" = true
+"android.permission.RECORD_AUDIO" = true
