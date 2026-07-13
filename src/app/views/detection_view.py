@@ -182,17 +182,14 @@ class DetectionView:
         if self.result_text:
             self.result_text.value = result.summary
             self.result_text.color = (
-                ft.Colors.GREEN_400 if result.has_person else ft.Colors.ORANGE_400
+                ft.Colors.GREEN_400 if result.has_targets else ft.Colors.ORANGE_400
             )
             self.result_text.update()
 
         if self.detection_list and result.boxes:
-            rows = []
-            for box in result.boxes:
-                icon = "🟢" if box.is_held else "🟠" if box.class_name == "person" else "🔵"
-                rows.append(
-                    ft.Text(f"{icon} {box.label}  [{box.width}x{box.height}px]", size=12)
-                )
-            self.detection_list.controls = rows
+            self.detection_list.controls = [
+                ft.Text(f"  {box.label}  [{box.width}x{box.height}px]", size=12)
+                for box in result.boxes
+            ]
             self.detection_list.visible = True
             self.detection_list.update()

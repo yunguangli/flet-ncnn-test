@@ -19,12 +19,25 @@ import time
 import logging
 from typing import Callable
 
-import cv2
-
 import flet_camera as fc
+
+import io
 
 from app.models.detector import YOLOv8NCNNDetector
 from app.models.types import DetectionResult
+
+try:
+    import cv2
+    import numpy as np
+    _CV2_OK = True
+except ImportError:
+    _CV2_OK = False
+
+try:
+    from PIL import Image
+    _PIL_OK = True
+except ImportError:
+    _PIL_OK = False
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +51,11 @@ class DetectionController:
         self,
         detector: YOLOv8NCNNDetector,
         use_flet_camera: bool = False,
+        lens_direction: fc.CameraLensDirection = fc.CameraLensDirection.BACK,
     ):
         self.detector = detector
         self.use_flet_camera = use_flet_camera
+        self.lens_direction = lens_direction
 
         # flet-camera control (set by View via attach_camera())
         self.camera: fc.Camera | None = None
@@ -48,7 +63,7 @@ class DetectionController:
         # State
         self.is_previewing: bool = False
         self.is_detecting: bool = False
-        self._cap: cv2.VideoCapture | None = None
+        self._cap = None  # cv2.VideoCapture when OpenCV backend is active
         self._preview_task: asyncio.Task | None = None
         self._detection_task: asyncio.Task | None = None
 
@@ -174,15 +189,62 @@ class DetectionController:
         return True
 
     def _select_camera(self, cameras: list) -> fc.CameraDescription:
-        """Prefer a front-facing camera; fall back to the first available."""
+        """Select camera matching current lens_direction; fall back to first available."""
         for cam in cameras:
-            if cam.lens_direction == fc.CameraLensDirection.FRONT:
+            if cam.lens_direction == self.lens_direction:
                 return cam
         return cameras[0]
 
+    @staticmethod
+    def _nv21_to_jpeg(nv21: bytes, width: int, height: int) -> bytes:
+        """Convert NV21 raw frame to JPEG bytes."""
+        yuv = np.frombuffer(nv21, dtype=np.uint8).reshape((height * 3 // 2, width))
+        if _CV2_OK:
+            bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV21)
+            _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return jpeg.tobytes()
+        # PIL-only fallback: manual NV21 → RGB conversion
+        y = yuv[:height * width].reshape((height, width))
+        uv = yuv[height * width:].reshape((height // 2, width // 2, 2))
+        u = uv[:, :, 0]
+        v = uv[:, :, 1]
+        rgb = np.empty((height, width, 3), dtype=np.uint8)
+        for y_row in range(height):
+            for x_col in range(width):
+                y_val = int(y[y_row, x_col]) - 16
+                u_val = int(u[y_row // 2, x_col // 2]) - 128
+                v_val = int(v[y_row // 2, x_col // 2]) - 128
+                r = (298 * y_val + 409 * v_val + 128) // 256
+                g = (298 * y_val - 100 * u_val - 208 * v_val + 128) // 256
+                b = (298 * y_val + 516 * u_val + 128) // 256
+                rgb[y_row, x_col] = np.clip([r, g, b], 0, 255)
+        img = Image.fromarray(rgb)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+
+    @staticmethod
+    def _bgra_to_jpeg(bgra: bytes, width: int, height: int) -> bytes:
+        """Convert BGRA8888 raw frame to JPEG bytes."""
+        arr = np.frombuffer(bgra, dtype=np.uint8).reshape((height, width, 4))
+        if _CV2_OK:
+            bgr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+            _, jpeg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return jpeg.tobytes()
+        # PIL-only fallback: drop alpha, convert to RGB
+        img = Image.fromarray(arr[:, :, :3][:, :, ::-1])
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+
     def _on_stream_image(self, e: fc.CameraImageEvent):
-        """Lightweight handler: just stash the latest JPEG frame."""
-        self._latest_stream_bytes = e.bytes
+        """Lightweight handler: stash the latest frame as JPEG (convert if needed)."""
+        frame = e.bytes
+        if e.format == fc.ImageFormatGroup.NV21:
+            frame = self._nv21_to_jpeg(frame, e.width, e.height)
+        elif e.format == fc.ImageFormatGroup.BGRA8888:
+            frame = self._bgra_to_jpeg(frame, e.width, e.height)
+        self._latest_stream_bytes = frame
         self._stream_frame_pending = True
 
     async def _on_camera_state_change(self, e: fc.CameraStateEvent):
@@ -224,6 +286,9 @@ class DetectionController:
 
     def _open_camera(self) -> bool:
         """Try camera indices 0..MAX_CAMERA_INDEX-1."""
+        if not _CV2_OK:
+            self._emit_error("OpenCV is not available. Cannot use desktop camera.")
+            return False
         self._emit_status("Opening camera via OpenCV...")
         for idx in range(MAX_CAMERA_INDEX):
             try:
@@ -252,19 +317,22 @@ class DetectionController:
 
     async def _preview_loop(self):
         """Read frames and display raw (no detection). Cancelled when detection starts."""
+        loop = asyncio.get_event_loop()
         frame_count = 0
         while self.is_previewing and not self.is_detecting:
             if self._cap is None or not self._cap.isOpened():
                 await asyncio.sleep(CAPTURE_INTERVAL)
                 continue
 
-            ret, frame = self._cap.read()
+            ret, frame = await loop.run_in_executor(None, self._cap.read)
             if not ret:
                 await asyncio.sleep(CAPTURE_INTERVAL)
                 continue
 
             try:
-                _, jpeg_bytes = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                _, jpeg_bytes = await loop.run_in_executor(
+                    None, cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
+                )
                 raw_result = DetectionResult(summary="Preview — no detection running")
                 if self.on_frame_updated:
                     self.on_frame_updated(jpeg_bytes.tobytes(), raw_result)
@@ -320,6 +388,16 @@ class DetectionController:
         if not self.is_previewing or self._cap is None or not self._cap.isOpened():
             self._emit_error("Start the camera first.")
             return False
+
+        # Stop preview loop before starting detection to avoid concurrent
+        # cap.read() calls from different executor threads.
+        if self._preview_task and not self._preview_task.done():
+            self._preview_task.cancel()
+            try:
+                await self._preview_task
+            except asyncio.CancelledError:
+                pass
+            self._preview_task = None
 
         self.is_detecting = True
         self.frame_count = 0
@@ -423,8 +501,23 @@ class DetectionController:
                 except asyncio.CancelledError:
                     break
 
+    def _run_detection_on_frame(self, frame: np.ndarray) -> tuple[bytes, DetectionResult]:
+        """Synchronous helper: encode → detect → render → re-encode.
+
+        Designed to run inside loop.run_in_executor() so none of these
+        blocking calls hold up the asyncio event loop.
+        """
+        _, jpeg_bytes = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return self.detector.detect_and_render_to_bytes(jpeg_bytes.tobytes())
+
     async def _opencv_detection_loop(self):
-        """Read frame → detect → render → push to view."""
+        """Read frame → detect → render → push to view.
+
+        All blocking calls (cap.read, imencode, NCNN inference) are
+        offloaded to a thread-pool executor so the event loop stays
+        responsive for UI updates and cancellation.
+        """
+        loop = asyncio.get_event_loop()
         while self.is_detecting:
             loop_start = time.time()
 
@@ -432,16 +525,15 @@ class DetectionController:
                 await asyncio.sleep(CAPTURE_INTERVAL)
                 continue
 
-            ret, frame = self._cap.read()
+            ret, frame = await loop.run_in_executor(None, self._cap.read)
             if not ret:
                 await asyncio.sleep(CAPTURE_INTERVAL)
                 continue
 
             try:
-                _, jpeg_bytes = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                jpeg_bytes = jpeg_bytes.tobytes()
-
-                annotated_bytes, result = self.detector.detect_and_render_to_bytes(jpeg_bytes)
+                annotated_bytes, result = await loop.run_in_executor(
+                    None, self._run_detection_on_frame, frame
+                )
 
                 self.last_result = result
                 self.last_annotated_bytes = annotated_bytes

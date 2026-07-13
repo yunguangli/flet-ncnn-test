@@ -6,15 +6,29 @@ Pure Model layer: no Flet imports, no UI logic.
   - Preprocess / forward / NMS
   - Optional filter by target_classes (e.g. ["laptop"])
   - File or in-memory (bytes) inputs
+  - Uses OpenCV when available; falls back to Pillow on Android/iOS
+    where opencv-python often fails to bootstrap.
 """
 
+import io
 from collections import Counter
 
-import cv2
 import numpy as np
-import ncnn
 
 from .types import BoundingBox, DetectionResult, DetectorConfig
+
+try:
+    import ncnn
+    _NCNN_OK = True
+except ImportError:
+    _NCNN_OK = False
+
+try:
+    import cv2
+    _CV2_OK = True
+except ImportError:
+    _CV2_OK = False
+    from PIL import Image, ImageDraw
 
 
 class YOLOv8NCNNDetector:
@@ -37,6 +51,11 @@ class YOLOv8NCNNDetector:
     ]
 
     def __init__(self, config: DetectorConfig):
+        if not _NCNN_OK:
+            raise RuntimeError(
+                "NCNN Python package is not available on this platform. "
+                "Cannot create detector."
+            )
         self.config = config
         self.class_names = self.COCO_CLASS_NAMES
         self._target_set = {
@@ -56,14 +75,20 @@ class YOLOv8NCNNDetector:
             )
 
     def detect_from_file(self, image_path: str) -> DetectionResult:
-        bgr_img = cv2.imread(image_path)
+        if _CV2_OK:
+            bgr_img = cv2.imread(image_path)
+        else:
+            try:
+                img = Image.open(image_path)
+                bgr_img = np.asarray(img)[:, :, ::-1].copy()
+            except Exception:
+                bgr_img = None
         if bgr_img is None:
             return DetectionResult(error=f"Cannot read image: {image_path}")
         return self._process_mat(bgr_img)
 
     def detect_from_bytes(self, image_bytes: bytes) -> DetectionResult:
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        bgr_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        bgr_img = self._decode_image(image_bytes)
         if bgr_img is None:
             return DetectionResult(error="Failed to decode image bytes")
         return self._process_mat(bgr_img)
@@ -73,12 +98,28 @@ class YOLOv8NCNNDetector:
         if result.error:
             return image_bytes, result
 
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        bgr_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        bgr_img = self._decode_image(image_bytes)
         self._render_boxes(bgr_img, result)
+        out_bytes = self._encode_image(bgr_img)
+        return out_bytes, result
 
-        _, buffer = cv2.imencode(".jpg", bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        return buffer.tobytes(), result
+    def _decode_image(self, image_bytes: bytes) -> np.ndarray | None:
+        if _CV2_OK:
+            np_arr = np.frombuffer(image_bytes, np.uint8)
+            return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            return np.asarray(img)[:, :, ::-1].copy()
+        except Exception:
+            return None
+
+    def _encode_image(self, bgr_img: np.ndarray) -> bytes:
+        if _CV2_OK:
+            _, buffer = cv2.imencode(".jpg", bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return buffer.tobytes()
+        buf = io.BytesIO()
+        Image.fromarray(bgr_img[:, :, ::-1]).save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
 
     def _process_mat(self, bgr_img: np.ndarray) -> DetectionResult:
         orig_h, orig_w = bgr_img.shape[:2]
@@ -160,6 +201,12 @@ class YOLOv8NCNNDetector:
         return "No objects detected."
 
     def _render_boxes(self, bgr_img: np.ndarray, result: DetectionResult) -> None:
+        if _CV2_OK:
+            self._render_boxes_cv2(bgr_img, result)
+        else:
+            self._render_boxes_pil(bgr_img, result)
+
+    def _render_boxes_cv2(self, bgr_img: np.ndarray, result: DetectionResult) -> None:
         color = (0, 255, 0)
         for box in result.boxes:
             cv2.rectangle(bgr_img, (box.x1, box.y1), (box.x2, box.y2), color, 2)
@@ -180,6 +227,23 @@ class YOLOv8NCNNDetector:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                 (0, 0, 0), 1, cv2.LINE_AA,
             )
+
+    def _render_boxes_pil(self, bgr_img: np.ndarray, result: DetectionResult) -> None:
+        rgb_img = Image.fromarray(bgr_img[:, :, ::-1])
+        draw = ImageDraw.Draw(rgb_img)
+        color = (0, 255, 0)
+        for box in result.boxes:
+            draw.rectangle([box.x1, box.y1, box.x2, box.y2], outline=color, width=2)
+            label = box.label
+            bbox = draw.textbbox((0, 0), label)
+            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.rectangle(
+                [box.x1, box.y1 - text_h - 4, box.x1 + text_w, box.y1],
+                fill=color,
+            )
+            draw.text((box.x1, box.y1 - 2), label, fill=(0, 0, 0))
+        # Write RGB pixel data back into the original BGR array in-place
+        bgr_img[:, :, ::-1] = np.asarray(rgb_img)
 
     @staticmethod
     def _nms(

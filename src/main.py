@@ -130,8 +130,8 @@ async def main(page: ft.Page):
     page.title = "Laptop Detect"
     page.theme_mode = ft.ThemeMode.DARK
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
+    page.vertical_alignment = ft.MainAxisAlignment.START
     page.padding = 16
-    page.scroll = ft.ScrollMode.AUTO
 
     asset_dir = resolve_asset_dir()
     param_path = os.path.join(asset_dir, "model.ncnn.param")
@@ -159,21 +159,13 @@ async def main(page: ft.Page):
         lambda r: logger.debug("detect: %s counts=%s", r.summary, r.class_counts)
     )
 
-    logger.info("ObjectDetectionCamera host (targets=laptop)")
-    page.add(
-        ft.SafeArea(
-            content=ft.Column(
-                spacing=12,
-                controls=[
-                    ft.AppBar(
-                        title=ft.Text("Laptop Detect (NCNN)"),
-                        bgcolor=ft.Colors.BLUE_GREY_900,
-                    ),
-                    camera_detect,
-                ],
-            ),
-        )
+    page.appbar = ft.AppBar(
+        title=ft.Text("Laptop Detect (NCNN)"),
+        bgcolor=ft.Colors.BLUE_GREY_900,
     )
+    logger.info("ObjectDetectionCamera host (targets=laptop)")
+    page.add(camera_detect)
+    page.update()
 
 
 if __name__ == "__main__":

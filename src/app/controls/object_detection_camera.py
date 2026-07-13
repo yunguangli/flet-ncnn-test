@@ -61,7 +61,7 @@ _TRANSPARENT_1PX = base64.b64decode(
 )
 
 
-@ft.control(isolated=True, kw_only=True)
+@ft.control(kw_only=True)
 class ObjectDetectionCamera(ft.Column):
     """Camera + NCNN detection panel. All host-facing options are serializable fields."""
 
@@ -85,24 +85,50 @@ class ObjectDetectionCamera(ft.Column):
         """Register a Python-only callback (not a Flet-serialized field)."""
         object.__setattr__(self, "_on_detection_result", callback)
 
+    def _build_error(self, title: str, detail: str):
+        self.controls = [
+            ft.Container(
+                content=ft.Column(
+                    spacing=8,
+                    controls=[
+                        ft.Text(title, color=ft.Colors.RED, weight=ft.FontWeight.BOLD, size=16),
+                        ft.Text(detail, size=13, color=ft.Colors.GREY_400, selectable=True),
+                    ],
+                ),
+                padding=20,
+            )
+        ]
+
     def build(self):
         if not self.param_path or not self.bin_path:
-            raise ValueError(
-                "ObjectDetectionCamera requires param_path and bin_path. "
-                "See module docstring."
+            self._build_error(
+                "Missing model paths",
+                "ObjectDetectionCamera requires param_path and bin_path.",
             )
+            return
 
-        detector = YOLOv8NCNNDetector(
-            DetectorConfig(
-                param_path=self.param_path,
-                bin_path=self.bin_path,
-                use_vulkan=self.use_vulkan,
-                conf_threshold=self.conf_threshold,
-                nms_threshold=self.nms_threshold,
-                input_size=self.input_size,
-                target_classes=list(self.target_classes),
+        try:
+            detector = YOLOv8NCNNDetector(
+                DetectorConfig(
+                    param_path=self.param_path,
+                    bin_path=self.bin_path,
+                    use_vulkan=self.use_vulkan,
+                    conf_threshold=self.conf_threshold,
+                    nms_threshold=self.nms_threshold,
+                    input_size=self.input_size,
+                    target_classes=list(self.target_classes),
+                )
             )
-        )
+        except RuntimeError as e:
+            self._build_error("NCNN not available", str(e))
+            return
+        except FileNotFoundError as e:
+            self._build_error("Model files not found", str(e))
+            return
+        except Exception as e:
+            logger.exception("Unexpected error creating detector")
+            self._build_error("Detector init failed", f"{type(e).__name__}: {e}")
+            return
 
         use_flet_camera = False
         if self.page is not None:
@@ -111,9 +137,11 @@ class ObjectDetectionCamera(ft.Column):
                 ft.PagePlatform.IOS,
             )
 
+        lens_dir = getattr(self, "_lens_direction", fc.CameraLensDirection.BACK)
         controller = DetectionController(
             detector=detector,
             use_flet_camera=use_flet_camera,
+            lens_direction=lens_dir,
         )
 
         # Python-only runtime state (not declared as control fields → not msgpacked)
@@ -123,6 +151,7 @@ class ObjectDetectionCamera(ft.Column):
         object.__setattr__(self, "_camera", None)
         object.__setattr__(self, "_preview_active", False)
         object.__setattr__(self, "_frame_counter", 0)
+        object.__setattr__(self, "_lens_direction", lens_dir)
         if not hasattr(self, "_on_detection_result"):
             object.__setattr__(self, "_on_detection_result", None)
 
@@ -161,6 +190,12 @@ class ObjectDetectionCamera(ft.Column):
                 text_style=ft.TextStyle(size=16, weight=ft.FontWeight.BOLD),
             ),
         )
+        flip_btn = ft.IconButton(
+            icon=ft.Icons.FLIP_CAMERA_ANDROID,
+            tooltip="Switch front/back camera",
+            on_click=self._on_flip_camera,
+            visible=use_flet_camera,
+        )
         toggle_btn = ft.FilledButton(
             content=ft.Text("Start Detection"),
             icon=ft.Icons.PLAY_ARROW,
@@ -191,6 +226,7 @@ class ObjectDetectionCamera(ft.Column):
             spacing=2, visible=False, height=150, scroll=ft.ScrollMode.AUTO,
         )
         object.__setattr__(self, "_camera_btn", camera_btn)
+        object.__setattr__(self, "_flip_btn", flip_btn)
         object.__setattr__(self, "_toggle_btn", toggle_btn)
         object.__setattr__(self, "_status_text", status_text)
         object.__setattr__(self, "_fps_text", fps_text)
@@ -200,7 +236,7 @@ class ObjectDetectionCamera(ft.Column):
 
         self.controls = [
             ft.Row(
-                controls=[camera_btn, toggle_btn, fps_text, backend_text],
+                controls=[camera_btn, flip_btn, toggle_btn, fps_text, backend_text],
                 alignment=ft.MainAxisAlignment.CENTER,
                 wrap=True,
             ),
@@ -348,6 +384,20 @@ class ObjectDetectionCamera(ft.Column):
         else:
             await self.start_camera()
 
+    async def _on_flip_camera(self, e: Any):
+        ctrl = self._ctrl()
+        if ctrl is None or not ctrl.use_flet_camera:
+            return
+        was_previewing = ctrl.is_previewing
+        if was_previewing:
+            await self.stop_camera()
+        ctrl.lens_direction = (
+            fc.CameraLensDirection.BACK if ctrl.lens_direction == fc.CameraLensDirection.FRONT
+            else fc.CameraLensDirection.FRONT
+        )
+        if was_previewing:
+            await self.start_camera()
+
     async def _on_toggle_detection(self, e: Any):
         await self.toggle_detection()
 
@@ -370,12 +420,12 @@ class ObjectDetectionCamera(ft.Column):
         object.__setattr__(self, "_preview_active", is_previewing)
         ctrl = self._ctrl()
         display_image = getattr(self, "_display_image", None)
-        if (
-            is_previewing
-            and ctrl is not None
-            and ctrl.use_flet_camera
-            and display_image is not None
-        ):
+        if display_image is None:
+            return
+        if is_previewing and ctrl is not None and ctrl.use_flet_camera:
+            display_image.src = _TRANSPARENT_1PX
+            display_image.update()
+        elif not is_previewing and display_image.src != _TRANSPARENT_1PX:
             display_image.src = _TRANSPARENT_1PX
             display_image.update()
 

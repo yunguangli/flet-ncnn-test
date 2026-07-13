@@ -9,10 +9,11 @@ authors = [
 ]
 dependencies = [
     "flet>=0.86.0.dev2",
-    "flet-camera",
+    "flet-camera>=0.86.0.dev2",
     "ncnn",
     "numpy",
     "opencv-python",
+    "pillow",
 ]
 
 [dependency-groups]
@@ -40,6 +41,9 @@ path = "src"
 
 [tool.flet.compile]
 packages = false
+
+[tool.flet.android.dev_packages]
+#flet-camera = "/tmp/flet-camera-src"
 
 [tool.flet.android]
 target_arch = ["arm64-v8a", "armeabi-v7a", "x86_64"]
